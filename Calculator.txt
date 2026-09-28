@@ -1,0 +1,543 @@
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
+public class Calculator extends JFrame {
+
+    // ------------------------------------------------------------
+    // UI components
+    // ------------------------------------------------------------
+    private final CalculatorEngine engine = new CalculatorEngine();
+
+    private final JLabel expressionLabel = new JLabel(" ", SwingConstants.RIGHT);
+    private final JLabel displayLabel = new JLabel("0", SwingConstants.RIGHT);
+    private final JLabel memoryLabel = new JLabel(" ", SwingConstants.LEFT);
+    private final JTextArea historyArea = new JTextArea();
+    private final JScrollPane historyScroll = new JScrollPane(historyArea);
+
+    // Colours
+    private static final Color BG = new Color(32, 33, 36);
+    private static final Color DISPLAY_FG = Color.WHITE;
+    private static final Color NUMBER_BG = new Color(59, 60, 64);
+    private static final Color FUNCTION_BG = new Color(45, 46, 50);
+    private static final Color OPERATOR_BG = new Color(255, 149, 0);
+    private static final Color EQUALS_BG = new Color(52, 168, 83);
+    private static final Color MEMORY_FG = new Color(138, 180, 248);
+
+    public Calculator() {
+        super("Java Calculator");
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+        getContentPane().setBackground(BG);
+
+        add(buildMainPanel(), BorderLayout.CENTER);
+        add(buildHistoryPanel(), BorderLayout.EAST);
+        historyScroll.setVisible(false); // hidden until the user toggles it
+
+        setupKeyboard();
+        pack();
+        setMinimumSize(getSize());
+        setLocationRelativeTo(null); // centre on screen
+        refresh();
+    }
+
+    // ------------------------------------------------------------
+    // Layout builders
+    // ------------------------------------------------------------
+    private JPanel buildMainPanel() {
+        JPanel main = new JPanel(new BorderLayout(0, 8));
+        main.setBackground(BG);
+        main.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        // --- Display area ---
+        JPanel displayPanel = new JPanel(new GridLayout(3, 1));
+        displayPanel.setBackground(BG);
+
+        memoryLabel.setForeground(MEMORY_FG);
+        memoryLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
+
+        expressionLabel.setForeground(new Color(160, 160, 160));
+        expressionLabel.setFont(new Font("SansSerif", Font.PLAIN, 14));
+
+        displayLabel.setForeground(DISPLAY_FG);
+        displayLabel.setFont(new Font("SansSerif", Font.PLAIN, 40));
+
+        displayPanel.add(memoryLabel);
+        displayPanel.add(expressionLabel);
+        displayPanel.add(displayLabel);
+        displayPanel.setPreferredSize(new Dimension(340, 110));
+
+        // --- Button area ---
+        JPanel buttons = new JPanel(new BorderLayout(0, 8));
+        buttons.setBackground(BG);
+        buttons.add(buildMemoryRow(), BorderLayout.NORTH);
+        buttons.add(buildKeypad(), BorderLayout.CENTER);
+
+        main.add(displayPanel, BorderLayout.NORTH);
+        main.add(buttons, BorderLayout.CENTER);
+        return main;
+    }
+
+    private JPanel buildMemoryRow() {
+        JPanel row = new JPanel(new GridLayout(1, 6, 6, 0));
+        row.setBackground(BG);
+        row.add(makeButton("MC", FUNCTION_BG, 13, e -> { engine.memoryClear(); refresh(); }));
+        row.add(makeButton("MR", FUNCTION_BG, 13, e -> { engine.memoryRecall(); refresh(); }));
+        row.add(makeButton("M+", FUNCTION_BG, 13, e -> { engine.memoryAdd(); refresh(); }));
+        row.add(makeButton("M-", FUNCTION_BG, 13, e -> { engine.memorySubtract(); refresh(); }));
+        row.add(makeButton("MS", FUNCTION_BG, 13, e -> { engine.memoryStore(); refresh(); }));
+        row.add(makeButton("Hist", FUNCTION_BG, 13, e -> toggleHistory()));
+        row.setPreferredSize(new Dimension(340, 34));
+        return row;
+    }
+
+    private JPanel buildKeypad() {
+        JPanel pad = new JPanel(new GridLayout(6, 4, 6, 6));
+        pad.setBackground(BG);
+
+        // Row 1
+        pad.add(makeButton("%", FUNCTION_BG, 20, e -> { engine.percent(); refresh(); }));
+        pad.add(makeButton("CE", FUNCTION_BG, 20, e -> { engine.clearEntry(); refresh(); }));
+        pad.add(makeButton("C", FUNCTION_BG, 20, e -> { engine.clearAll(); refresh(); }));
+        pad.add(makeButton("DEL", FUNCTION_BG, 16, e -> { engine.backspace(); refresh(); }));
+
+        // Row 2
+        pad.add(makeButton("1/x", FUNCTION_BG, 20, e -> { engine.reciprocal(); refresh(); }));
+        pad.add(makeButton("x\u00B2", FUNCTION_BG, 20, e -> { engine.square(); refresh(); }));
+        pad.add(makeButton("\u221A", FUNCTION_BG, 20, e -> { engine.squareRoot(); refresh(); }));
+        pad.add(makeButton("\u00F7", OPERATOR_BG, 24, e -> { engine.operator("/"); refresh(); }));
+
+        // Row 3
+        pad.add(digitButton("7"));
+        pad.add(digitButton("8"));
+        pad.add(digitButton("9"));
+        pad.add(makeButton("\u00D7", OPERATOR_BG, 24, e -> { engine.operator("*"); refresh(); }));
+
+        // Row 4
+        pad.add(digitButton("4"));
+        pad.add(digitButton("5"));
+        pad.add(digitButton("6"));
+        pad.add(makeButton("\u2212", OPERATOR_BG, 24, e -> { engine.operator("-"); refresh(); }));
+
+        // Row 5
+        pad.add(digitButton("1"));
+        pad.add(digitButton("2"));
+        pad.add(digitButton("3"));
+        pad.add(makeButton("+", OPERATOR_BG, 24, e -> { engine.operator("+"); refresh(); }));
+
+        // Row 6
+        pad.add(makeButton("\u00B1", NUMBER_BG, 20, e -> { engine.toggleSign(); refresh(); }));
+        pad.add(digitButton("0"));
+        pad.add(makeButton(".", NUMBER_BG, 24, e -> { engine.inputDecimal(); refresh(); }));
+        pad.add(makeButton("=", EQUALS_BG, 24, e -> { engine.equals(); refresh(); }));
+
+        return pad;
+    }
+
+    private JPanel buildHistoryPanel() {
+        historyArea.setEditable(false);
+        historyArea.setBackground(new Color(40, 41, 45));
+        historyArea.setForeground(new Color(200, 200, 200));
+        historyArea.setFont(new Font("Monospaced", Font.PLAIN, 13));
+        historyArea.setMargin(new Insets(8, 8, 8, 8));
+        historyScroll.setPreferredSize(new Dimension(230, 0));
+        historyScroll.setBorder(BorderFactory.createEmptyBorder());
+
+        JButton clear = makeButton("Clear history", FUNCTION_BG, 12, e -> {
+            engine.clearHistory();
+            refresh();
+        });
+        clear.setPreferredSize(new Dimension(230, 32));
+
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(BG);
+        wrapper.add(historyScroll, BorderLayout.CENTER);
+        wrapper.add(clear, BorderLayout.SOUTH);
+        wrapper.setBorder(BorderFactory.createEmptyBorder(12, 0, 12, 12));
+        wrapper.setVisible(false);
+
+        // Keep a reference so the toggle can show/hide the whole panel
+        historyPanel = wrapper;
+        return wrapper;
+    }
+
+    private JPanel historyPanel;
+
+    private void toggleHistory() {
+        historyPanel.setVisible(!historyPanel.isVisible());
+        historyScroll.setVisible(historyPanel.isVisible());
+        pack();
+    }
+
+    // ------------------------------------------------------------
+    // Button helpers
+    // ------------------------------------------------------------
+    private JButton digitButton(String digit) {
+        return makeButton(digit, NUMBER_BG, 22, e -> {
+            engine.inputDigit(digit.charAt(0));
+            refresh();
+        });
+    }
+
+    private JButton makeButton(String text, Color bg, int fontSize,
+                               java.awt.event.ActionListener action) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("SansSerif", Font.PLAIN, fontSize));
+        b.setBackground(bg);
+        b.setForeground(Color.WHITE);
+        b.setOpaque(true);
+        b.setBorderPainted(false);
+        b.setFocusPainted(false);
+        b.setFocusable(false); // keeps keyboard focus on the frame
+        b.addActionListener(action);
+        return b;
+    }
+
+    // ------------------------------------------------------------
+    // Keyboard support
+    // ------------------------------------------------------------
+    private void setupKeyboard() {
+        setFocusable(true);
+        addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyTyped(KeyEvent e) {
+                char c = e.getKeyChar();
+                if (c >= '0' && c <= '9') {
+                    engine.inputDigit(c);
+                } else if (c == '.' || c == ',') {
+                    engine.inputDecimal();
+                } else if (c == '+' || c == '-' || c == '*' || c == '/') {
+                    engine.operator(String.valueOf(c));
+                } else if (c == '%') {
+                    engine.percent();
+                } else if (c == '=' || c == '\n') {
+                    engine.equals();
+                } else if (c == '\b') {
+                    engine.backspace();
+                } else if (c == 27) { // Escape
+                    engine.clearAll();
+                } else {
+                    return;
+                }
+                refresh();
+            }
+        });
+    }
+
+    // ------------------------------------------------------------
+    // Refresh the UI from the engine's state
+    // ------------------------------------------------------------
+    private void refresh() {
+        String text = engine.getDisplay();
+        displayLabel.setText(text);
+
+        // Shrink the font for long numbers so they always fit
+        int size = text.length() <= 11 ? 40 : text.length() <= 15 ? 32 : 24;
+        displayLabel.setFont(new Font("SansSerif", Font.PLAIN, size));
+
+        expressionLabel.setText(engine.getExpression().isEmpty() ? " " : engine.getExpression());
+        memoryLabel.setText(engine.hasMemory() ? "M" : " ");
+
+        StringBuilder sb = new StringBuilder();
+        for (String line : engine.getHistory()) {
+            sb.append(line).append("\n\n");
+        }
+        historyArea.setText(sb.toString());
+        historyArea.setCaretPosition(historyArea.getDocument().getLength());
+    }
+
+    // ------------------------------------------------------------
+    // Entry point
+    // ------------------------------------------------------------
+    public static void main(String[] args) {
+        try {
+            // Cross-platform look & feel so button colours render everywhere
+            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+        } catch (Exception ignored) {
+        }
+        SwingUtilities.invokeLater(() -> new Calculator().setVisible(true));
+    }
+}
+
+/**
+ * CalculatorEngine
+ * ---------------------------------------------------------------
+ * Pure logic, no GUI code. This makes the calculator easy to test
+ * and reuse (for example, with a console or web front end).
+ */
+class CalculatorEngine {
+
+    private static final MathContext MC = new MathContext(15, RoundingMode.HALF_UP);
+    private static final int MAX_DIGITS = 16;
+
+    private String entry = "0";          // number currently shown / being typed
+    private boolean newEntry = true;     // next digit starts a fresh number
+    private BigDecimal accumulator;      // left operand of the pending operation
+    private String pendingOp;            // "+", "-", "*", "/" or null
+    private String expression = "";      // small line above the main display
+    private boolean error = false;
+
+    private BigDecimal memory;           // null means memory is empty
+    private final List<String> history = new ArrayList<>();
+
+    // ---------------- Getters ----------------
+    public String getDisplay() { return entry; }
+    public String getExpression() { return expression; }
+    public boolean hasMemory() { return memory != null; }
+    public List<String> getHistory() { return history; }
+    public void clearHistory() { history.clear(); }
+
+    // ---------------- Number entry ----------------
+    public void inputDigit(char d) {
+        if (error) clearAll();
+
+        // Starting a digit right after "=" begins a brand-new calculation
+        if (newEntry && pendingOp == null) {
+            expression = "";
+        }
+
+        if (newEntry) {
+            entry = String.valueOf(d);
+            newEntry = false;
+        } else if (entry.equals("0")) {
+            entry = String.valueOf(d);
+        } else if (entry.equals("-0")) {
+            entry = "-" + d;
+        } else if (digitCount(entry) < MAX_DIGITS) {
+            entry += d;
+        }
+    }
+
+    public void inputDecimal() {
+        if (error) clearAll();
+        if (newEntry && pendingOp == null) expression = "";
+
+        if (newEntry) {
+            entry = "0.";
+            newEntry = false;
+        } else if (!entry.contains(".")) {
+            entry += ".";
+        }
+    }
+
+    public void toggleSign() {
+        if (error) return;
+        if (entry.equals("0")) return;
+        entry = entry.startsWith("-") ? entry.substring(1) : "-" + entry;
+    }
+
+    public void backspace() {
+        if (error) { clearAll(); return; }
+        if (newEntry) return; // can't edit a computed result
+        entry = entry.substring(0, entry.length() - 1);
+        if (entry.isEmpty() || entry.equals("-")) {
+            entry = "0";
+        }
+    }
+
+    public void clearEntry() {
+        if (error) { clearAll(); return; }
+        entry = "0";
+        newEntry = false;
+    }
+
+    public void clearAll() {
+        entry = "0";
+        newEntry = true;
+        accumulator = null;
+        pendingOp = null;
+        expression = "";
+        error = false;
+    }
+
+    // ---------------- Binary operations ----------------
+    public void operator(String op) {
+        if (error) return;
+
+        try {
+            if (pendingOp != null && !newEntry) {
+                // Chain: 2 + 3 + ... -> compute 2 + 3 first
+                accumulator = apply(accumulator, pendingOp, current());
+            } else if (pendingOp == null) {
+                accumulator = current();
+            }
+            // else: operator pressed twice, just replace the operator
+        } catch (ArithmeticException ex) {
+            fail(ex.getMessage());
+            return;
+        }
+
+        pendingOp = op;
+        newEntry = true;
+        entry = format(accumulator);
+        expression = format(accumulator) + " " + symbol(op);
+    }
+
+    public void equals() {
+        if (error) return;
+
+        if (pendingOp == null) {
+            expression = format(current()) + " =";
+            newEntry = true;
+            return;
+        }
+
+        try {
+            BigDecimal right = current();
+            BigDecimal result = apply(accumulator, pendingOp, right);
+
+            String line = format(accumulator) + " " + symbol(pendingOp) + " "
+                    + format(right) + " =";
+            expression = line;
+            entry = format(result);
+            history.add(line + "\n  " + entry);
+
+            accumulator = null;
+            pendingOp = null;
+            newEntry = true;
+        } catch (ArithmeticException ex) {
+            fail(ex.getMessage());
+        }
+    }
+
+    // ---------------- Unary operations ----------------
+    public void percent() {
+        if (error) return;
+        BigDecimal value = current();
+        if (pendingOp != null && accumulator != null) {
+            // 200 + 10%  ->  200 + 20
+            value = accumulator.multiply(value, MC).divide(BigDecimal.valueOf(100), MC);
+        } else {
+            value = BigDecimal.ZERO;
+        }
+        entry = format(value);
+        newEntry = false;
+    }
+
+    public void squareRoot() {
+        if (error) return;
+        BigDecimal value = current();
+        if (value.signum() < 0) {
+            fail("Invalid input");
+            return;
+        }
+        String shown = "\u221A(" + format(value) + ")";
+        BigDecimal result = value.sqrt(MC);
+        entry = format(result);
+        expression = shown;
+        history.add(shown + " =\n  " + entry);
+        newEntry = true;
+    }
+
+    public void square() {
+        if (error) return;
+        BigDecimal value = current();
+        String shown = "sqr(" + format(value) + ")";
+        BigDecimal result = value.multiply(value, MC);
+        entry = format(result);
+        expression = shown;
+        history.add(shown + " =\n  " + entry);
+        newEntry = true;
+    }
+
+    public void reciprocal() {
+        if (error) return;
+        BigDecimal value = current();
+        if (value.signum() == 0) {
+            fail("Cannot divide by zero");
+            return;
+        }
+        String shown = "1/(" + format(value) + ")";
+        BigDecimal result = BigDecimal.ONE.divide(value, MC);
+        entry = format(result);
+        expression = shown;
+        history.add(shown + " =\n  " + entry);
+        newEntry = true;
+    }
+
+    // ---------------- Memory ----------------
+    public void memoryClear() { memory = null; }
+
+    public void memoryRecall() {
+        if (error || memory == null) return;
+        entry = format(memory);
+        newEntry = true;
+    }
+
+    public void memoryStore() {
+        if (error) return;
+        memory = current();
+        newEntry = true;
+    }
+
+    public void memoryAdd() {
+        if (error) return;
+        memory = (memory == null ? BigDecimal.ZERO : memory).add(current(), MC);
+        newEntry = true;
+    }
+
+    public void memorySubtract() {
+        if (error) return;
+        memory = (memory == null ? BigDecimal.ZERO : memory).subtract(current(), MC);
+        newEntry = true;
+    }
+
+    // ---------------- Helpers ----------------
+    private BigDecimal current() {
+        return new BigDecimal(entry);
+    }
+
+    private BigDecimal apply(BigDecimal a, String op, BigDecimal b) {
+        switch (op) {
+            case "+": return a.add(b, MC);
+            case "-": return a.subtract(b, MC);
+            case "*": return a.multiply(b, MC);
+            case "/":
+                if (b.signum() == 0) {
+                    throw new ArithmeticException("Cannot divide by zero");
+                }
+                return a.divide(b, MC);
+            default:
+                throw new IllegalArgumentException("Unknown operator: " + op);
+        }
+    }
+
+    private void fail(String message) {
+        error = true;
+        entry = message;
+        expression = "";
+        accumulator = null;
+        pendingOp = null;
+        newEntry = true;
+    }
+
+    private static int digitCount(String s) {
+        int count = 0;
+        for (char c : s.toCharArray()) {
+            if (Character.isDigit(c)) count++;
+        }
+        return count;
+    }
+
+    private static String symbol(String op) {
+        switch (op) {
+            case "*": return "\u00D7";
+            case "/": return "\u00F7";
+            case "-": return "\u2212";
+            default:  return op;
+        }
+    }
+
+    /** Formats a BigDecimal: no trailing zeros, scientific notation only if huge/tiny. */
+    static String format(BigDecimal value) {
+        if (value.signum() == 0) return "0";
+        BigDecimal v = value.round(MC).stripTrailingZeros();
+        String plain = v.toPlainString();
+        return plain.length() <= 18 ? plain : v.toString();
+    }
+}
